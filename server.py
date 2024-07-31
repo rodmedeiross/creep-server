@@ -1,8 +1,97 @@
 import sys;
+import os;
 import socket;
+from .constants import *
 
-BUFFER_SIZE=1024
-ENCODING="UTF-8"
+def MIME_map(ext):
+    match ext:
+        case TXT:
+            return TEXT_PLAIN
+        case HTML:
+            return TEXT_HTML
+
+
+def hd_header(socket):
+    buffer = b''
+    headers = []
+
+    while True:
+        chunk = socket.recv(1)
+
+        if not chunk:
+            break
+
+        buffer += chunk
+
+        if buffer.endswith(CRLF):
+            to_append = buffer[:-len(CRLF)]
+
+            headers.append(to_append)
+
+            if to_append == b'': 
+                break
+
+            buffer = b''
+
+    return headers
+
+def hd_body(socket, buffer_size = BUFFER_SIZE):
+    buffer = b''
+
+    while len(buffer) < buffer_size:
+        chunk = socket.recv(buffer_size - len(buffer))
+
+        if not chunk:
+            break
+
+        buffer += chunk
+
+        if BRANK_LINE in buffer:
+            break
+
+    return buffer
+
+def parse_headers(headers):
+    map_headers = {}
+    headers = [header.decode(ENCODING).split(": ", 1) for header in headers]
+    http = headers[0][0].split(" ")
+
+    map_headers["Method"]=http[0]
+    map_headers["Path"]=http[1]
+    map_headers["Http-Bunner"]=http[2]
+
+    for [header, value] in headers[1:-1]:
+        map_headers[header] = value
+    return map_headers
+
+def handler(socket):
+    headers = hd_header(socket)
+    headers = parse_headers(headers)
+
+    content_len = int(headers['Content-Length']) if 'Content-Length' in headers else BUFFER_SIZE
+    body = hd_body(socket, content_len)
+
+    return  resp_handler(socket, headers, body)
+
+def resp_handler(socket, headers, body):
+    content_type = headers['Content-Type'] if 'Content-Type' in headers else TEXT_PLAIN
+    request_path = headers['Path'] if 'Path' in headers else SOURCE_PATH
+
+    resp_stream = file_handler(content_type, request_path)
+
+    socket.send("Today is Friday in California\r\n".encode(ENCODING))
+    socket.close()
+
+def file_handler(content_type, request_path):
+    path = os.path.abspath(SOURCE_PATH)
+    file = os.path.split(request_path)[-1]
+    _, file_ext = os.path.splitext(file)
+
+    mime_type = MIME_map(file_ext)
+    
+    absolute_file_path = "%s/%s".format(path,file)
+
+    pass
 
 class Server:
     def __init__(self) -> None:
@@ -19,69 +108,9 @@ class Server:
         while True:
             socket, address =self._socket.accept()
             print(f"Socket created from {address}")
-            self.handler(socket)
+            handler(socket)
     
-    def handler(self, socket):
-        
-        headers = self.parse_headers(self.hd_header(socket))
 
-        if 'Content-Length' in headers:
-            content_len = headers['Content-Length']
-            content_len = int(content_len)
-            body = self.hd_body(socket, content_len)
-            print(body.decode(ENCODING))
-
-
-        socket.send("Today is Friday in California\r\n".encode(ENCODING))
-        return socket.close()
-
-    def hd_header(self, socket):
-        buffer = b''
-        crlf = b'\r\n'
-        crlf_len = len(crlf)
-
-        headers = []
-
-        while True:
-            chunk = socket.recv(1)
-
-            if not chunk:
-                break
-
-            buffer += chunk
-
-            if buffer.endswith(crlf):
-                to_append = buffer[:-crlf_len]
-                headers.append(to_append)
-                if to_append == b'': 
-                    break
-                buffer = b''
-
-        return headers
-
-    def hd_body(self, socket, buffer_size = BUFFER_SIZE):
-        buffer = b''
-        brank_line = b'\r\n\r\n'
-
-        while len(buffer) < buffer_size:
-            chunk = socket.recv(buffer_size - len(buffer))
-
-            if not chunk:
-                break
-
-            buffer += chunk
-
-            if brank_line in buffer:
-                break
-
-        return buffer
-
-    def parse_headers(self, headers):
-        hashmap_headers = {}
-        headers = [header.decode(ENCODING).split(": ", 1) for header in headers][1:-1]
-        for [header, value] in headers:
-            hashmap_headers[header] = value
-        return hashmap_headers
 
 if __name__ == "__main__":
     server = Server()
